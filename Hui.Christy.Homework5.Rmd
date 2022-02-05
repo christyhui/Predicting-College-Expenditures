@@ -1,0 +1,404 @@
+---
+title: "Stats 101c Homework 5"
+author: "Christy Hui"
+date: "Due 11/5/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Problem 1
+
+``` {r}
+# prep data
+college = read.csv("College Fall 2021.csv")
+college = college[, -c(1, 2, 3)] # delete useless x variable and categorical predictors
+table(is.na(college)) # ensure no NAs
+# library(mice)
+# college = complete(mice(college)) <- fills in NAs (not needed here but good to have for later assignments)
+college = scale(college) # scale data set
+college = data.frame(college) # ensure college is data frame after scaling
+dim(college)
+set.seed(1128)
+library(caTools)
+split = sample(dim(college)[1], 2000 * 0.7,replace = FALSE)
+college_train = college[split,]
+college_test = college[-split,]
+dim(college_train) # ensure split worked
+dim(college_test)
+```
+
+### Part A
+
+``` {r}
+# make least squares model
+c_lm = lm(Expend ~., data = college_train)
+``` 
+
+MSE for LM training
+
+``` {r}
+lm_training_mse = mean(c_lm$residuals^2)
+# lm_training_mse = mean((college_train$Expend - c_lm$fitted.values)^2)
+# or
+# lm_training_mse = mean((college_train$Expend - predict(c_lm, newdata = college_train))^2)
+# all above are equivalent ways of calculating mse
+lm_training_mse
+```
+
+MSE for LM testing
+
+``` {r}
+lm_testing_mse = mean((college_test$Expend - predict(c_lm, newdata = college_test))^2)
+lm_testing_mse
+```
+
+### Part B
+
+``` {r}
+# make ridge model
+x = model.matrix(Expend ~., data = college_train)
+y = college_train$Expend
+x_test = model.matrix(Expend ~., data = college_test) # for predicting testing
+library(glmnet)
+c_ridge = cv.glmnet(x, y, alpha = 0)
+c_ridge$lambda.min # best lambda
+predict(c_ridge, s = c_ridge$lambda.min, type = "coefficients")
+```
+
+Interestingly, ridge regression did not take away any coefficients (and we are left with 18).
+
+MSE for Ridge Training
+
+``` {r}
+ridge_training_mse = mean((college_train$Expend - predict(c_ridge, s = c_ridge$lambda.min, newx = x))^2)
+ridge_training_mse
+```
+
+MSE for Ridge Testing
+
+``` {r}
+ridge_testing_mse = mean((college_test$Expend - predict(c_ridge, s = c_ridge$lambda.min, newx = x_test))^2)
+ridge_testing_mse
+```
+
+### Part C
+
+``` {r}
+# make lasso model
+c_lasso = cv.glmnet(x, y, alpha = 1)
+c_lasso$lambda.min # best lambda
+predict(c_lasso, s = c_lasso$lambda.min, type = "coefficients")
+```
+
+Interestingly, lasso regression also did not take away any coefficients (and we are left with 18).
+
+MSE for Lasso Training
+
+``` {r}
+lasso_training_mse = mean((college_train$Expend - predict(c_lasso, s = c_lasso$lambda.min, newx = x))^2)
+lasso_training_mse
+```
+
+MSE for Lasso Testing
+
+``` {r}
+lasso_testing_mse = mean((college_test$Expend - predict(c_lasso, s = c_lasso$lambda.min, newx = x_test))^2)
+lasso_testing_mse
+```
+
+## Problem 2
+
+### Part A
+
+``` {r}
+library(pls)
+c_pcr = pcr(Expend ~., data = college_train, scale = TRUE, validation = "CV")
+summary(c_pcr)
+```
+
+We use 85% as our threshold in variation. Because 7 principal components explains 86.64% of the variance, but 6 principal components explain 82.21%, we conclude that M = 7. Thus, we have reduced the dimensionality of predictors from 16 to 7.
+
+MSE for PCR training using 7 principal components
+
+``` {r}
+pcr_training_mse = mean((college_train$Expend - predict(c_pcr, newdata = college_train, ncomp = 7))^2)
+pcr_training_mse
+```
+
+MSE for PCR testing using 7 principal components
+
+``` {r}
+pcr_testing_mse = mean((college_test$Expend - predict(c_pcr, newdata = college_test, ncomp = 7))^2)
+pcr_testing_mse
+```
+
+### Part B
+
+``` {r}
+library(pls)
+c_pls = plsr(Expend ~., data = college_train, scale = TRUE, validation = "CV")
+summary(c_pls)
+```
+
+We use 85% as our threshold in variation. Because 10 principal components explains 86.64% of the variance, but 9 principal components explain 84.23%, we conclude that M = 10. Thus, we have reduced the dimensionality of predictors from 16 to 10.
+
+MSE for PLS training using 10 principal components
+
+``` {r}
+pls_training_mse = mean((college_train$Expend - predict(c_pls, newdata = college_train, ncomp = 10))^2)
+pls_training_mse
+```
+
+MSE for PLS testing using 10 principal components
+
+``` {r}
+pls_testing_mse = mean((college_test$Expend - predict(c_pls, newdata = college_test, ncomp = 10))^2)
+pls_testing_mse
+```
+
+## Problem 3
+
+### Part A
+
+``` {r}
+c_step = step(c_lm,
+              direction = "backward",
+              k = log(nrow(college_train)))
+```
+
+According to BIC and backwards stepwise regression, the satisfactory number of predictors is 8. These predictors are:
+
+Grad.Rate
+
+Terminal
+
+Top25perc
+
+Accept
+
+Apps
+
+Top10perc
+
+S.F.Ratio
+
+Outstate
+
+We now want to create a lm model with only these 8 predictors in order to see how well the step() function's predictor reduction does.
+
+``` {r}
+c_step_lm = lm(Expend ~ Grad.Rate + Terminal + Top25perc + Accept + Apps + Top10perc + S.F.Ratio + Outstate, data = college_train)
+```
+
+MSE for Step Function LM Training
+
+``` {r}
+step_training_mse = mean(c_step_lm$residuals^2)
+step_training_mse
+```
+
+MSE for Step Function LM Testing
+
+``` {r}
+step_testing_mse = mean((college_test$Expend - predict(c_step_lm, newdata = college_test))^2)
+step_testing_mse
+```
+
+### Part B
+
+Now that we have our 8 predictors, our mission is to now fit a GAM model (spline) using the bs() function in R. But to find the "best" or "close to best" bs(), we need to make sure we have the polynomials that give the best MSE. In this case, we will find the polynomails with the best MSE with 10-folds cross validation.
+
+For Grad.Rate:
+
+``` {r}
+library(boot)
+all.deltas = rep(NA, 10)
+for (i in 1:10) {
+ glm.fit = glm(Expend ~ poly(Grad.Rate, i), data = college_train)
+ all.deltas[i] = cv.glm(college_train, glm.fit, K = 10)$delta[2]
+}
+plot(1:10, all.deltas, xlab = "Degree", ylab = "CV error", type = "l", pch = 20, lwd = 2)
+```
+
+Grad.Rate seems to do well with only a function of only 1 degree. This means that when doing our Spline function, we will choose the degree of the function to be 1. 
+
+For Terminal:
+
+``` {r}
+library(boot)
+all.deltas = rep(NA, 10)
+for (i in 1:10) {
+ glm.fit = glm(Expend ~ poly(Terminal, i), data = college_train)
+ all.deltas[i] = cv.glm(college_train, glm.fit, K = 10)$delta[2]
+}
+plot(1:10, all.deltas, xlab = "Degree", ylab = "CV error", type = "l", pch = 20, lwd = 2)
+```
+
+For the "Terminal" predictor, we can see that the lowest MSE comes from a degree of around 4. Thus, when doing our Spline function for "Terminal," we will choose the degree of the function to be 4.
+
+For Top25perc
+
+``` {r}
+library(boot)
+all.deltas = rep(NA, 10)
+for (i in 1:10) {
+ glm.fit = glm(Expend ~ poly(Top25perc, i), data = college_train)
+ all.deltas[i] = cv.glm(college_train, glm.fit, K = 10)$delta[2]
+}
+plot(1:10, all.deltas, xlab = "Degree", ylab = "CV error", type = "l", pch = 20, lwd = 2)
+```
+
+When plotting the MSE for the different polynomials, we see that a degree of 5 seems to be the best for the "Top25perc" variable. Thus, we will choose a degree of 5.
+
+For Accept:
+
+``` {r}
+library(boot)
+all.deltas = rep(NA, 10)
+for (i in 1:10) {
+ glm.fit = glm(Expend ~ poly(Accept, i), data = college_train)
+ all.deltas[i] = cv.glm(college_train, glm.fit, K = 10)$delta[2]
+}
+plot(1:10, all.deltas, xlab = "Degree", ylab = "CV error", type = "l", pch = 20, lwd = 2)
+```
+
+Interestingly, it seems as though a degree of 1 yields the best MSE for the "Accept" predictor (just like Grad.Rate). Thus, we will choose the degree for the "Accept" predictor to be 1.
+
+For Apps:
+
+``` {r}
+library(boot)
+all.deltas = rep(NA, 10)
+for (i in 1:10) {
+ glm.fit = glm(Expend ~ poly(Apps, i), data = college_train)
+ all.deltas[i] = cv.glm(college_train, glm.fit, K = 10)$delta[2]
+}
+plot(1:10, all.deltas, xlab = "Degree", ylab = "CV error", type = "l", pch = 20, lwd = 2)
+```
+
+Similarly to the "Grad.Rate" and "Accept" predictors, the "Apps" predictor also seems to yield the best MSE when it has a polynomial of degree 1. We will choose the degree equal to 1.
+
+For Top10perc:
+
+``` {r}
+library(boot)
+all.deltas = rep(NA, 10)
+for (i in 1:10) {
+ glm.fit = glm(Expend ~ poly(Top10perc, i), data = college_train)
+ all.deltas[i] = cv.glm(college_train, glm.fit, K = 10)$delta[2]
+}
+plot(1:10, all.deltas, xlab = "Degree", ylab = "CV error", type = "l", pch = 20, lwd = 2)
+```
+
+The MSE for Top10perc seems to be lowest when the degree of the polynomial is 9. Thus, we will choose the degree to be 9 when doing GAM.
+
+For S.F.Ratio:
+
+```{r}
+library(boot)
+all.deltas = rep(NA, 10)
+for (i in 1:10) {
+ glm.fit = glm(Expend ~ poly(S.F.Ratio, i), data = college_train)
+ all.deltas[i] = cv.glm(college_train, glm.fit, K = 10)$delta[2]
+}
+plot(1:10, all.deltas, xlab = "Degree", ylab = "CV error", type = "l", pch = 20, lwd = 2)
+```
+
+For the S.F.Ratio, the lowest MSE seems to be when the degree equals to 9. Thus, we will choose the 9th degree polynomial.
+
+For Outstate:
+
+```{r}
+library(boot)
+all.deltas = rep(NA, 10)
+for (i in 1:10) {
+ glm.fit = glm(Expend ~ poly(Outstate, i), data = college_train)
+ all.deltas[i] = cv.glm(college_train, glm.fit, K = 10)$delta[2]
+}
+plot(1:10, all.deltas, xlab = "Degree", ylab = "CV error", type = "l", pch = 20, lwd = 2)
+```
+
+A degree of 1 (like Grad.Rate and other predictors) has the lowest MSE for the Outstate predictor. So we will choose a degree of 1.
+
+Now that we have all of the best degrees for each of the 8 strongest predictors, we will create the Spline function.
+
+Note: In bs(), we can specify the degree. Since bs() does only cubic splines, the degrees of the predictors that we agreed upon to only be 1 will be 3.
+
+``` {r}
+library(splines)
+c_spline = lm(Expend ~ bs(Grad.Rate, degree = 3) + bs(Terminal, degree = 4) + bs(Top25perc, degree = 5) + bs(Accept, degree = 3) + bs(Apps, degree = 3) + bs(Top10perc, degree = 9) + bs(S.F.Ratio, degree = 9) + bs(Outstate, degree = 3),
+              data = college_train)
+summary(c_spline)
+plot(c_spline)
+```
+
+From our plots, we see some deviation from residual and error points; overall, however, our plot does a decent job. Looking at the first plot between the fitted values vs the residuals, we can see that the plot bounces around the red line, indicating a good relationship between our line and points. In the second plot, a good proportion of points lie on the line, indicating a well-behaved plot. Also, the third plot is well-behaved (or a little bit well-behaved) because it demonstrates some sort of linearity and relationship between the points. Thus, conclude that our model did a decent job in fitting.
+
+### Part C
+
+MSE for GAM Training
+
+``` {r}
+gam_training_mse = mean((college_train$Expend - predict(c_spline, newdata = college_train))^2)
+gam_training_mse
+```
+
+MSE for GAM Testing
+
+``` {r}
+gam_testing_mse = mean((college_test$Expend - predict(c_spline, newdata = college_test))^2)
+gam_testing_mse
+```
+
+Above, we see that the MSE for the testing data is 0.3156828, which is higher than the training (0.1909127). This makes sense, since the model fits under the training data set (quite well, in fact, compared to our other models).
+
+### Part D
+
+To answer this question, it may be more clear if we look at the plots.
+
+``` {r}
+library(ggplot2)
+ggplot(data = college_train, aes(Grad.Rate, Expend)) + geom_point() + geom_smooth()
+
+ggplot(data = college_train, aes(Terminal, Expend)) + geom_point() + geom_smooth()
+
+ggplot(data = college_train, aes(Top25perc, Expend)) + geom_point() + geom_smooth()
+
+ggplot(data = college_train, aes(Accept, Expend)) + geom_point() + geom_smooth()
+
+ggplot(data = college_train, aes(Apps, Expend)) + geom_point() + geom_smooth()
+
+ggplot(data = college_train, aes(Top10perc, Expend)) + geom_point() + geom_smooth()
+
+ggplot(data = college_train, aes(S.F.Ratio, Expend)) + geom_point() + geom_smooth()
+
+ggplot(data = college_train, aes(Outstate, Expend)) + geom_point() + geom_smooth()
+```
+
+Looking at these plots, it seems as though all 8 predictors need some sort of non-linear relationship. None of the predictors seem to have a linear relationship (which may indicate that we chose incorrectly when doing our GAM function). The lines of predictors that seem the closest to a linear relationship are Grad.Rate, Accept, Top10perc, and Outstate. However, the points seem to be highly uncorrelated (and thus hard to plot). Thus, it is probably more accurate to say that all 8 predictors do not have a linear-relationship.
+
+## Problem 4
+
+In order to better picture our MSEs, let us plot the MSEs all in one graph.
+
+``` {r}
+library(reshape)
+Approach = c("LS", "Ridge", "Lasso", "PCR", "PLS", "Step", "GAM")
+Training_MSEs = c(lm_training_mse, ridge_training_mse, lasso_training_mse, pcr_training_mse, pls_training_mse, step_training_mse, gam_training_mse)
+Testing_MSEs = c(lm_testing_mse, ridge_testing_mse, lasso_testing_mse, pcr_testing_mse, pls_testing_mse, step_testing_mse, gam_testing_mse)
+
+plot(Training_MSEs, xlab = "Models", ylab = "Training Accuracy Rate", xaxt = "n")
+axis(1, at = 1:7, labels = Approach)
+
+plot(Testing_MSEs, xlab = "Models", ylab = "Testing Accuracy Rate", xaxt = "n")
+axis(1, at = 1:7, labels = Approach)
+```
+
+Notice how GAM did the best out of all of the functions in both the training and testing data sets. We can accurately say that ,out of all of our models, GAM did the best (in terms of the lowest MSE). Least squares (the LM model) and Step model both seemed to do the second best. This may imply that the a linear model with all predictors and 8 best predictors may also be a good fit for the model. In regards to the difference in MSE, we can accurately see that PCR did the worst in both the training and testing data sets. The difference between PCR and GAM is quite high (around 0.20 in the training!), which allows us to conclude that in terms of MSE and our other models, PCR does not do well.
+
+
+
+
